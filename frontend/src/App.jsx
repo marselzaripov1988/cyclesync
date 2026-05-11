@@ -1,48 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { apiRequest } from "./api";
 import { buildMonthGrid, toISODate } from "./calendar";
-
-function AuthPanel({ onAuthed }) {
-  const [mode, setMode] = useState("login");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-
-  async function submit(e) {
-    e.preventDefault();
-    setError("");
-    try {
-      const endpoint = mode === "login" ? "/api/auth/login" : "/api/auth/register";
-      const data = await apiRequest(endpoint, {
-        method: "POST",
-        body: JSON.stringify({ email, password }),
-      });
-      onAuthed(data.token, data.user);
-    } catch (err) {
-      setError(err.message);
-    }
-  }
-
-  return (
-    <div className="panel stack">
-      <h2>{mode === "login" ? "Login" : "Create Account"}</h2>
-      <form className="stack" onSubmit={submit}>
-        <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" />
-        <input
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          type="password"
-          placeholder="Password (min 8 chars)"
-        />
-        <button type="submit">{mode === "login" ? "Login" : "Register"}</button>
-      </form>
-      {error ? <div className="error">{error}</div> : null}
-      <button type="button" onClick={() => setMode(mode === "login" ? "register" : "login")}>
-        {mode === "login" ? "Need an account?" : "Have an account?"}
-      </button>
-    </div>
-  );
-}
+import { getPredictedEvents } from "./predictions";
 
 function ProfileForm({ onSave, initial }) {
   const [name, setName] = useState(initial?.name || "");
@@ -98,144 +56,84 @@ function ProfileForm({ onSave, initial }) {
 }
 
 export default function App() {
-  const [token, setToken] = useState(localStorage.getItem("cyclesync.token") || "");
-  const [user, setUser] = useState(
-    localStorage.getItem("cyclesync.user") ? JSON.parse(localStorage.getItem("cyclesync.user")) : null
-  );
   const [profiles, setProfiles] = useState([]);
   const [editing, setEditing] = useState(null);
   const [activeProfileId, setActiveProfileId] = useState(null);
   const [calendarMode, setCalendarMode] = useState("classic");
   const [month, setMonth] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
-  const [events, setEvents] = useState([]);
-  const [appleId, setAppleId] = useState("");
-  const [appPassword, setAppPassword] = useState("");
   const [error, setError] = useState("");
 
   const monthGrid = useMemo(() => buildMonthGrid(month), [month]);
   const from = monthGrid[0];
   const to = monthGrid[monthGrid.length - 1];
-
-  async function loadProfiles() {
-    const data = await apiRequest("/api/profiles", {}, token);
-    setProfiles(data.profiles);
-    if (data.profiles.length && !data.profiles.some((p) => p.id === activeProfileId)) {
-      setActiveProfileId(data.profiles[0].id);
-    }
-  }
-
-  async function loadEvents() {
-    const data = await apiRequest(
-      `/api/predictions?from=${toISODate(from)}&to=${toISODate(to)}`,
-      {},
-      token
-    );
-    setEvents(data.events);
-  }
+  const events = useMemo(
+    () => profiles.flatMap((profile) => getPredictedEvents(profile, from, to)),
+    [profiles, from, to]
+  );
 
   useEffect(() => {
-    if (!token) return;
-    loadProfiles().catch((err) => setError(err.message));
-  }, [token]);
-
-  useEffect(() => {
-    if (!token) return;
-    loadEvents().catch((err) => setError(err.message));
-  }, [token, month, profiles.length]);
-
-  function onAuthed(nextToken, nextUser) {
-    setToken(nextToken);
-    setUser(nextUser);
-    localStorage.setItem("cyclesync.token", nextToken);
-    localStorage.setItem("cyclesync.user", JSON.stringify(nextUser));
-  }
-
-  async function saveProfile(payload) {
-    setError("");
+    const raw = localStorage.getItem("cyclesync.profiles");
+    if (!raw) return;
     try {
-      if (editing) {
-        await apiRequest(
-          `/api/profiles/${editing.id}`,
-          {
-            method: "PUT",
-            body: JSON.stringify(payload),
-          },
-          token
-        );
-      } else {
-        await apiRequest(
-          "/api/profiles",
-          {
-            method: "POST",
-            body: JSON.stringify(payload),
-          },
-          token
-        );
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        setProfiles(parsed);
+        if (parsed.length) {
+          setActiveProfileId(parsed[0].id);
+        }
       }
-      setEditing(null);
-      await loadProfiles();
-      await loadEvents();
     } catch (err) {
-      setError(err.message);
+      setError("Could not read saved profiles from local storage.");
+    }
+  }, []);
+
+  function persistProfiles(nextProfiles) {
+    setProfiles(nextProfiles);
+    localStorage.setItem("cyclesync.profiles", JSON.stringify(nextProfiles));
+    if (nextProfiles.length === 0) {
+      setActiveProfileId(null);
+      return;
+    }
+    if (!nextProfiles.some((p) => p.id === activeProfileId)) {
+      setActiveProfileId(nextProfiles[0].id);
     }
   }
 
-  async function removeProfile(id) {
+  function saveProfile(payload) {
     setError("");
-    try {
-      await apiRequest(`/api/profiles/${id}`, { method: "DELETE" }, token);
-      if (activeProfileId === id) {
-        const next = profiles.find((p) => p.id !== id);
-        setActiveProfileId(next?.id || null);
-      }
-      await loadProfiles();
-      await loadEvents();
-    } catch (err) {
-      setError(err.message);
+    if (!payload.name) {
+      setError("Profile name is required.");
+      return;
     }
+    if (payload.cycle_length < 20 || payload.cycle_length > 45) {
+      setError("Cycle length must be between 20 and 45 days.");
+      return;
+    }
+    if (payload.period_length < 2 || payload.period_length > 10) {
+      setError("Period length must be between 2 and 10 days.");
+      return;
+    }
+
+    const newId =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `profile-${Date.now()}`;
+
+    const nextProfiles = editing
+      ? profiles.map((p) => (p.id === editing.id ? { ...payload, id: editing.id } : p))
+      : [...profiles, { ...payload, id: newId }];
+
+    persistProfiles(nextProfiles);
+    setEditing(null);
   }
 
-  async function connectICloud() {
+  function removeProfile(id) {
     setError("");
-    try {
-      await apiRequest(
-        "/api/icloud/connect",
-        { method: "POST", body: JSON.stringify({ appleId, appSpecificPassword: appPassword }) },
-        token
-      );
-      setAppPassword("");
-      await syncICloud();
-    } catch (err) {
-      setError(err.message);
+    const nextProfiles = profiles.filter((p) => p.id !== id);
+    persistProfiles(nextProfiles);
+    if (activeProfileId === id) {
+      setActiveProfileId(nextProfiles[0]?.id || null);
     }
-  }
-
-  async function syncICloud() {
-    setError("");
-    try {
-      await apiRequest("/api/icloud/sync", { method: "POST" }, token);
-      await loadProfiles();
-      await loadEvents();
-    } catch (err) {
-      setError(err.message);
-    }
-  }
-
-  function logout() {
-    localStorage.removeItem("cyclesync.token");
-    localStorage.removeItem("cyclesync.user");
-    setToken("");
-    setUser(null);
-    setProfiles([]);
-    setEvents([]);
-  }
-
-  if (!token) {
-    return (
-      <div className="app">
-        <AuthPanel onAuthed={onAuthed} />
-      </div>
-    );
   }
 
   const profileNameById = new Map(profiles.map((p) => [p.id, p.name]));
@@ -254,10 +152,8 @@ export default function App() {
   return (
     <div className="app">
       <div className="panel stack">
-        <div className="row" style={{ justifyContent: "space-between" }}>
-          <strong>{user?.email}</strong>
-          <button onClick={logout}>Logout</button>
-        </div>
+        <h2 style={{ margin: 0 }}>CycleSync Frontend</h2>
+        <div className="small">Profiles are stored locally in your browser.</div>
         <h3>{editing ? "Edit Profile" : "Add Profile"}</h3>
         <ProfileForm onSave={saveProfile} initial={editing} />
         <h3>Profiles</h3>
@@ -275,19 +171,6 @@ export default function App() {
             </li>
           ))}
         </ul>
-        <h3>iCloud Contacts Sync</h3>
-        <input placeholder="Apple ID (email)" value={appleId} onChange={(e) => setAppleId(e.target.value)} />
-        <input
-          type="password"
-          placeholder="App-specific password"
-          value={appPassword}
-          onChange={(e) => setAppPassword(e.target.value)}
-        />
-        <div className="row">
-          <button onClick={connectICloud}>Connect</button>
-          <button onClick={syncICloud}>Sync now</button>
-        </div>
-        <div className="small">Apple requires an app-specific password for iCloud CardDAV access.</div>
         {error ? <div className="error">{error}</div> : null}
       </div>
 

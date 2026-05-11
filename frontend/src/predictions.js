@@ -4,10 +4,6 @@ export function addDays(date, days) {
   return d;
 }
 
-export function toISODate(date) {
-  return date.toISOString().slice(0, 10);
-}
-
 function parseISODate(value) {
   const [y, m, d] = value.split("-").map(Number);
   return new Date(y, m - 1, d);
@@ -27,15 +23,19 @@ export function getPredictedEvents(profile, fromDate, toDate) {
   while (cycleStart <= addDays(toDate, cycleLength * 2)) {
     for (let i = 0; i < periodLength; i += 1) {
       const d = addDays(cycleStart, i);
-      events.push({ date: toISODate(d), type: "period", profileId: profile.id });
+      events.push({ date: d.toISOString().slice(0, 10), type: "period", profileId: profile.id });
     }
 
     const ovulationDay = addDays(cycleStart, cycleLength - 14);
-    events.push({ date: toISODate(ovulationDay), type: "ovulation", profileId: profile.id });
+    events.push({
+      date: ovulationDay.toISOString().slice(0, 10),
+      type: "ovulation",
+      profileId: profile.id,
+    });
 
     for (let i = -4; i <= 1; i += 1) {
       const d = addDays(ovulationDay, i);
-      events.push({ date: toISODate(d), type: "fertile", profileId: profile.id });
+      events.push({ date: d.toISOString().slice(0, 10), type: "fertile", profileId: profile.id });
     }
 
     cycleStart = addDays(cycleStart, cycleLength);
@@ -46,4 +46,3 @@ export function getPredictedEvents(profile, fromDate, toDate) {
     return d >= fromDate && d <= toDate;
   });
 }
-
