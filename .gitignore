@@ -1,0 +1,11 @@
+node_modules/
+**/node_modules/
+
+# Cursor local runtime artifacts
+terminals/
+agent-transcripts/
+agent-tools/
+
+# Environment files
+.env
+.env.*
