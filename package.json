@@ -1,12 +1,19 @@
 {
-  "name": "cyclesync-frontend-project",
-  "private": true,
+  "name": "cyclesync-frontend",
   "version": "1.0.0",
+  "private": true,
+  "type": "module",
   "scripts": {
-    "install": "npm --prefix frontend install",
-    "dev": "npm --prefix frontend run dev",
-    "build": "npm --prefix frontend run build",
-    "preview": "npm --prefix frontend run preview"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.2",
+    "vite": "^5.4.9"
   }
 }
-
