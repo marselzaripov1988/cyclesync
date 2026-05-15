@@ -31,7 +31,7 @@ function ProfileForm({ onSave, initial }) {
       }}
     >
       <input placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
-      <div className="small">Profile name from contact list (for example: Sarah Johnson).</div>
+      <div className="small">!Profile name from contact list (for example: Sarah Johnson).</div>
       <input type="date" value={lastPeriodStart} onChange={(e) => setLastPeriodStart(e.target.value)} />
       <div className="small">First day of the most recent period.</div>
       <input
