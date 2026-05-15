@@ -152,7 +152,7 @@ export default function App() {
   return (
     <div className="app">
       <div className="panel stack">
-        <h2 style={{ margin: 0 }}>CycleSync Frontend</h2>
+        <h2 style={{ margin: 0 }}>CycleSync</h2>
         <div className="small">Profiles are stored locally in your browser.</div>
         <h3>{editing ? "Edit Profile" : "Add Profile"}</h3>
         <ProfileForm onSave={saveProfile} initial={editing} />
